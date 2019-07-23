@@ -1,0 +1,7 @@
+https://github.com/stameser/BDT
+
+v ramci lokalu (mimo hdfs) klasicky linux cp/mv/rm
+mezi hdfs a lokalem put/get
+uvnitr hdfs "klasicky" hdfs dfs cp/mv/rm
+
+

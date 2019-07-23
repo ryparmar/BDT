@@ -1,0 +1,93 @@
+/* 
+HW1 HIVE
+Course: BDT
+Author: Martin Rypar 
+*/
+
+/* 1 */
+CREATE TABLE temp_new (
+    stanice string,
+    mesic int,
+    den int,
+    hodina int,
+    teplota double,
+    flag string,
+    latitude double,
+    longitude double,
+    vyska double,
+    stat string,
+    nazev string
+)
+ROW FORMAT
+DELIMITED FIELDS TERMINATED BY ','
+LINES TERMINATED BY '\n'
+STORED AS TEXTFILE
+LOCATION "/user/ryparmar/teplota2019";
+
+CREATE EXTERNAL TABLE IF NOT EXISTS temperature_new (
+  stanice string,  
+  den int,
+  hodina int,
+  teplota double,
+  flag string,
+  latitude double,
+  longitude double,
+  vyska double,
+  stat string,
+  nazev string
+)
+PARTITIONED BY (rok int, mesic int)
+STORED AS parquet
+tblproperties('parquet.compress'='SNAPPY');
+
+ALTER TABLE temperature_new 
+ADD IF NOT EXISTS PARTITION (rok=2019, mesic=1);
+
+INSERT INTO TABLE temperature_new PARTITION(rok=2019, mesic=1) 
+SELECT stanice, den, hodina, teplota, flag, latitude, longitude, vyska, stat, nazev
+FROM temp_new 
+WHERE mesic=1;
+
+
+/* 2 */
+/* kde yyyy je minuly rok a mm mazany mesic */
+ALTER TABLE T DROP IF EXISTS PARTITION(ym="yyyymm")
+
+
+/* 3 */
+import org.apache.hadoop.hive.ql.exec.Description;
+import org.apache.hadoop.hive.ql.exec.UDF;
+import org.apache.hadoop.io.*;
+
+
+public class toFahrenheit extends UDF {
+    public double celsiusToFahrenheit(double input) {
+        // If the value is null, return a null
+        if(input == null)
+            return null;
+
+        return (input*(9/5))+32;
+    }
+}
+
+public class toCelsius extends UDF {
+    public double fahrenheitToCelsius(double input) {
+        // If the value is null, return a null
+        if(input == null)
+            return null;
+
+        return (input-32)*(5/9);
+    }
+}
+
+
+addjar toFahrenheit.jar
+addjar toCelsius.jar
+create temporary function fahrenheit_to_celcius as "com.mycompany.hive.udf.toFahrenheit";
+create temporary function celcius_to_fahrenheit as "com.mycompany.hive.udf.toCelsius";
+
+
+
+
+
+	

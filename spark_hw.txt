@@ -1,0 +1,73 @@
+/* 
+HW2 SPARK
+Course: BDT
+Author: Martin Rypar 
+
+VYSLEDKY:
+1) 0.013549499110061822 vs. 0.013132119386216022
+2) 53
+3) mesic: count
+   1: 3,
+   2: 5, 
+   3: 0,
+   4: 15,
+   5: 0,
+   6: 0,
+   7: 38,
+   8: 10,
+   9: 2,
+   10: 3,
+   11: 3,
+   12: 1
+*/
+
+from PIL import Image
+from PIL.ExifTags import TAGS
+import StringIO
+from pyspark.sql.types import *
+from pyspark.sql.functions import hour, month, year, unix_timestamp, from_unixtime, avg, col, round, format_number
+from datetime import datetime
+
+
+def get_exif(str):
+    ret = {}
+    fn = StringIO.StringIO(str)
+    i = Image.open(fn)
+    info = i._getexif()
+    if info:
+        for tag, value in info.items():
+            decoded = TAGS.get(tag, tag)
+	    if decoded in ["DateTime", "ExposureTime", "ExifImageWidth", "ExifImageHeight"]:
+                if decoded == "ExposureTime":
+	            ret[decoded] = value[-1]
+		else:
+		    ret[decoded] = value
+		
+    return ret
+
+imgs = sc.binaryFiles("/user/pascepet/data/images")
+imgs2 = imgs.map(lambda detuple: detuple[-1])
+imgs3 = imgs2.map(get_exif)
+
+dfSchema = StructType([
+    StructField("DateTime", StringType(), True),
+    StructField("ExifImageHeight", LongType(), True),
+    StructField("ExifImageWidth", LongType(), True),
+    StructField("ExposureTime", LongType(), True) ])
+
+df = sqlContext.createDataFrame(imgs3, dfSchema)
+df = df.withColumn("ExposureTime", 1/col("ExposureTime"))
+df2 = df.select(from_unixtime(unix_timestamp("DateTime", "yyyy:MM:dd HH:mm:ss")).alias("DateTime").cast(TimestampType()), df.ExposureTime, df.ExifImageWidth, df.ExifImageHeight)
+
+tmp11 = df2.where(hour(col("DateTime")).isin([9,10,11,12,13,14,15]))
+q11 = tmp11.agg(avg(col("ExposureTime"))).show()
+
+tmp12 = df2.where(hour(col("DateTime")).isin([9,10,11,12,13,14,15])==False)
+q12 = tmp12.agg(avg(col("ExposureTime"))).show()
+
+q2 = df2.filter(df2.ExifImageHeight*df2.ExifImageWidth > 4000000).select().na.drop().count()
+q2
+
+q3 = df2.groupBy(month(df2.DateTime)).count()
+q3 = df2.where(col("DateTime").isNotNull()).groupBy(month(df2.DateTime)).count()
+q3.show()

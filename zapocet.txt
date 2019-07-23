@@ -1,0 +1,130 @@
+//*--------------------
+Martin Rypar
+BDT
+Zapocet, 9.1.2019
+--------------------*//
+
+1. HDFS 
+
+hdfs dfs -chmod 755 /user/ryparmar
+hdfs dfs -mkdir chess_ratings
+hdfs dfs -chmod 755 /user/ryparmar/chess_ratings
+hdfs dfs -put /home/pascepet/fel_bigdata/data/chess_ratings/standard_????.csv /user/ryparmar/chess_ratings
+
+
+2. HIVE
+
+CREATE EXTERNAL TABLE ratings_ext (
+  id int,
+  name string,
+  state char(3),
+  sex char(1),
+  rating int,
+  games int,
+  born_year int,
+  listed_year int,
+  listed_month int
+)
+ROW FORMAT
+DELIMITED FIELDS TERMINATED BY '|'
+LINES TERMINATED BY '\n'
+STORED AS TEXTFILE
+LOCATION "/user/pascepet/data/chess_ratings_red";
+
+
+CREATE TABLE ratings (
+  id int,
+  name string,
+  state char(3),
+  sex char(1),
+  rating int,
+  games int,
+  born_year int,
+  listed_year int,
+  listed_month int
+)
+STORED AS ORC
+TBLPROPERTIES("orc.compress"="ZLIB");
+
+
+INSERT INTO TABLE ratings
+SELECT 
+  id,
+  name,
+  state,
+  sex,
+  rating,
+  games,
+  born_year,
+  listed_year,
+  listed_month
+FROM ratings_ext
+WHERE name is not NULL AND born_year > 0 AND rating is not NULL;
+
+//* DODELANO EXPOST *//
+SELECT ratings.id, ratings.name, max(ratings.rating)-min(ratings.rating) AS diff FROM ratings GROUP BY ratings.id, ratings.name ORDER BY diff DESC LIMIT 100;
+
+//* JESTE JEDEN DOTAZ - nepamatuji si *//
+
+3. SPARK RDD
+
+dd = sc.textFile("/user/pascepet/data/chess_ratings_red/")
+dd1 = dd.map(lambda line: line.split("|"))
+
+
+def parse(line):
+    if line[1] != "":  
+        return line[0] + line[1]
+    else: return ""
+
+dd2 = dd1.map(lambda line: parse(line))
+dd2 = dd2.filter(lambda line: line != "")
+dd2.distinct().count()
+
+dd3 = dd1.map(lambda line: len(line[1].split(",")))
+dd3 = dd3.map(lambda line: [line, 1])
+dd4 = dd3.reduceByKey(lambda x,y: x+y)
+
+
+def parse2(line):
+    if line[1] != "":
+        tmp = line[1].split(",")
+        ret = 0
+        for i in tmp:
+            if i.replace(" ", "") == "Mustafa":
+                ret = ret + 1 
+    else: ret = 0
+    return ret
+
+dd5 = dd1.map(lambda line: parse2(line)).sum()
+
+
+
+4. SPARK SQL
+
+from pyspark.sql.types import *
+from pyspark.sql import functions as F
+
+schema = StructType([
+    StructField("id", LongType()),
+    StructField("name", StringType()),
+    StructField("state", StringType()),
+    StructField("sex", StringType()),
+    StructField("rating", IntegerType()),
+    StructField("games", IntegerType()),
+    StructField("born_year", IntegerType()),
+    StructField("listed_year", IntegerType()),
+    StructField("listed_month", IntegerType())
+])
+
+
+df = sqlContext.read.format("com.databricks.spark.csv").option("header", "false").option("delimiter", '|').schema(schema).load("/user/pascepet/data/chess_ratings_red/*.csv")
+
+
+df.filter((df.sex == "F") & (df.state == "CZE" ) & (df.rating > 2300)).select(df.name).distinct().show()
+
+df.groupBy(df.name).agg({'games': 'count'}).toDF('name', 'games').filter("name != ''").orderBy('games', ascending=False).take(3)
+
+df.filter( ((df.listed_year == 2017) & (df.listed_month == 12)) | ((df.listed_year == 2018) & (df.listed_month == 12)) ).groupBy(df.name).agg({'rating': 'avg'}).toDF('name', 'avg_rating').show()
+
+

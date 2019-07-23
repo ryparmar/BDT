@@ -1,0 +1,115 @@
+hdfs dfs -put /home/pascepet/fel_bigdata/test/iris.csv /user/ryparmar
+hdfs dfs -mkdir final_test
+hdfs dfs -cp /user/pascepet/final_test/data-trans.csv /user/ryparmar/final_test
+hdfs dfs -chmod 775 final_test 
+
+https://community.hortonworks.com/questions/145863/hive-partitions-based-on-date-from-timestamp.html
+
+CREATE EXTERNAL TABLE data_tmp (
+    id_from int,
+    id_to int,
+    datum string,
+    amt float
+)
+ROW FORMAT
+DELIMITED FIELDS TERMINATED BY ','
+LINES TERMINATED BY '\n'
+STORED AS TEXTFILE
+LOCATION "/user/ryparmar/ft";
+
+
+CREATE TABLE data (
+    id_from int,
+    id_to int,
+    datum date,
+    amt float
+)
+PARTITIONED BY(month int)
+STORED AS ORC
+TBLPROPERTIES("orc.compress"="ZLIB");
+
+
+// WORKING
+//-----------------------------------------
+set hive.exec.dynamic.partition=true;
+set hive.exec.dynamic.partition.mode=nonstrict;
+
+CREATE TABLE tmp(
+  jmeno varchar(60),
+  vaha float,
+  vyska int,
+  datum_nar date
+)
+PARTITIONED BY(month int);
+
+INSERT INTO TABLE tmp PARTITION(month)
+SELECT 
+  jmeno,
+  vaha,
+  vyska,
+  datum_nar,
+  month(datum_nar)
+FROM lide;
+//-----------------------------------------
+
+
+INSERT INTO TABLE data PARTITION(month)
+SELECT
+  id_from,
+  id_to,
+  datum,
+  amt,
+  month(datum)
+FROM data_tmp
+WHERE id_from is not NULL AND id_to is not NULL AND datum is not NULL AND amt is not NULL;
+
+SELECT count(*) FROM data WHERE mesic = 6;
+
+// taky by melo fungovat
+set hive.exec.dynamic.partition=true;
+set hive.exec.dynamic.partition.mode=nonstrict;
+INSERT INTO TABLE data partitioned(month) select id_from, id_to, datum, amt, MONTH(datum),sale_date from data_tmp;
+//
+
+
+
+def proportion(str):
+    ones = 0
+    for char in str:
+      if(char=='1'):
+	ones+=1
+    return round(float(ones)/len(str), 4)
+
+def parse(line):  
+    prop = proportion(line[1])
+    length = len(line[1])
+    return [line[0], line[1], prop, length ]
+
+
+lines = sc.textFile("/user/ryparmar/ft/posl.txt")
+lines2 = lines.map(lambda line: line.split(", "))
+lines3 = lines2.map(lambda line: parse(line) )
+lines3.take(10)
+
+lines3.max(key = lambda x: x[3])
+
+lines3.sortBy(lambda x: x[2], ascending=False).map(lambda line: line[0]).take(3)
+
+lines3.filter(lambda x: x[2] < 0.25).count()
+
+
+from pyspark.sql.types import *
+from pyspark.sql import functions as F
+
+df = sqlContext.read.format("com.databricks.spark.csv").option("header", "true").option("delimiter", ",").schema(schema).load("/user/pascepet/final_test/airbnb/train_users_2.csv")
+
+// musi se rovnat
+df.filter(df.country_destination != 'NDF').count()
+df.filter(df.country_destination != 'NDF').select(df.id).distinct().count()
+
+df.filter(df.country_destination != 'NDF').select(df.first_browser).groupBy('first_browser').count().toDF('browser', 'count').orderBy('count', ascending=False)
+
+df.groupBy().min('date_account_created').show()
+df.groupBy().max('date_account_created').show()
+
+df.filter( (df.country_destination != 'NDF') & (df.gender == 'female') & (df.signup_method == 'Facebook') ).count()

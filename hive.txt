@@ -1,0 +1,127 @@
+ssh ryparmar@hador.ics.muni.cz
+
+beeline -u "jdbc:hive2://hador-c1.ics.muni.cz:10000/default;principal=hive/hador-c1.ics.muni.cz@ICS.MUNI.CZ"
+
+
+INSERT OVERWRITE TABLE temperature_part PARTITION(year, month) select * from temperature_tmp; 
+
+
+use ryparmar;
+
+show tables;
+
+create external table temperature_tmp (
+    stanice string,
+    mesic int,
+    den int,
+    hodina int,
+    teplota double,
+    flag string,
+    latitude double,
+    longitude double,
+    vyska double,
+    stat string,
+    nazev string)
+ROW FORMAT
+DELIMITED FIELDS TERMINATED BY ','
+LINES TERMINATED BY '\n'
+STORED AS TEXTFILE
+LOCATION "/user/ryparmar/teplota";
+
+
+CREATE TABLE IF NOT EXISTS temperature (
+  stanice string,
+  mesic int,
+  den int,
+  hodina int,
+  teplota double,
+  flag string,
+  latitude double,
+  longitude double,
+  vyska double,
+  stat string,
+  nazev string
+)
+STORED AS parquet
+tblproperties('parquet.compress'='SNAPPY');
+
+INSERT OVERWRITE TABLE temperature
+SELECT
+  stanice,
+  mesic,
+  den,
+  hodina,
+  ((teplota  / 10) - 32) * 5/9,
+  flag,
+  latitude,
+  longitude,
+  vyska,
+  stat,
+  nazev
+FROM temperature_tmp where mesic is not NULL;
+
+drop table temperature_tmp;
+
+hdfs dfs -ls /user/ryparmar
+
+set hive.exec.dynamic.partition=true;
+set hive.exec.dynamic.partition.mode=nonstrict;
+
+CREATE EXTERNAL TABLE IF NOT EXISTS temperaturep (
+  stanice string,  
+  den int,
+  hodina int,
+  teplota double,
+  flag string,
+  latitude double,
+  longitude double,
+  vyska double,
+  stat string,
+  nazev string
+)
+partitioned by (mesic int)
+STORED AS parquet
+tblproperties('parquet.compress'='SNAPPY');
+
+INSERT OVERWRITE TABLE temperaturep partiton (mesic)
+SELECT
+  stanice,
+  den,
+  hodina,
+  ((teplota  / 10) - 32) * 5/9,
+  flag,
+  latitude,
+  longitude,
+  vyska,
+  stat,
+  nazev,
+  mesic
+FROM temperature_tmp where mesic is not NULL;
+
+
+
+
+CREATE EXTERNAL TABLE IF NOT EXISTS temperaturen (
+  stanice string,  
+  den int,
+  hodina int,
+  teplota double,
+  flag string,
+  latitude double,
+  longitude double,
+  vyska double,
+  stat string,
+  nazev string
+)
+PARTITIONED BY (rok int, mesic int)
+STORED AS parquet
+tblproperties('parquet.compress'='SNAPPY');
+
+ALTER TABLE temperaturen 
+ADD IF NOT EXISTS PARTITION (rok=2018, mesic=9);
+
+INSERT INTO TABLE temperaturen PARTITION(rok=2018, mesic=9) 
+SELECT stanice, den, hodina, teplota, flag, latitude, longitude, vyska, stat, nazev
+FROM temperature_tmp
+WHERE mesic=9;
+
